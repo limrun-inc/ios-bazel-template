@@ -30,9 +30,12 @@ verified, but if a flag errors or you need one not shown here, check
 2. Run the printed command, e.g.
    `bazelisk --digest_function=sha256 build --config=limrun //App`.
 
-Don't hand-write `.limrun/` or the flags — the CLI generates them for the fleet's
-Xcode and your OS. Re-run `lim xcode rbe` (after `--stop`) to refresh after a
-fleet Xcode upgrade.
+Don't hand-write `.limrun/` or the flags — the CLI generates them for the
+sandbox's Xcode and your OS. `lim xcode version set 27` (or the one-off
+`lim xcode rbe --xcode-version 27`) builds with another installed Xcode: a bare
+major binds that major's GA release, a major.minor such as `27.1` pins that
+exact version (the beta). Re-run `lim xcode rbe` (after `--stop`) to refresh
+after a fleet Xcode upgrade or an Xcode switch.
 
 To add your own Bazel flags to the limrun path without editing the generated
 config, put them in **`user.limrun.bazelrc`** at the workspace root. The
@@ -50,8 +53,11 @@ lim xcode get             # is a simulator already attached?
 lim ios create --attach   # attach one
 ```
 
+Add `--no-open` when you have no browser to show the user; it skips opening
+the stream URL locally and still prints it for sharing.
+
 If the attach output includes a signed stream URL, share it with the user as a
-Markdown link, such as [Live simulator](<signed-stream-url>).
+Markdown link, such as `[Live simulator](<signed-stream-url>)`.
 
 With a simulator attached, every successful `--config=limrun` build automatically
 reinstalls and relaunches the app, no separate install step:
@@ -89,7 +95,8 @@ lim xcode rbe upload preview/my-app --ttl 24h                # one-shot: the new
   post-build step. Upload results land in `.limrun/rbe.log`.
 - `rbe upload` runs from the workspace root and needs a background tunnel
   plus at least one successful build; it errors otherwise.
-- TTLs are Go durations (`24h`, `30m`; `1d` is invalid) and optional.
+- TTLs are Go durations (`24h`, `30m`; `1d` is invalid) and optional; each
+  upload without one pushes the asset's expiry to 14 days from that upload.
 - To change the `--auto-upload` config of a running tunnel, `--stop` and
   re-run; the CLI refuses a mismatched re-arm instead of silently ignoring it.
 - Preview an uploaded app in a browser at

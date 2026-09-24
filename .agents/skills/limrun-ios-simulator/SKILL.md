@@ -1,6 +1,6 @@
 ---
 name: limrun-ios-simulator
-description: "Drive an app running on a Limrun cloud iOS simulator: launch, tap, type, read the accessibility element tree, screenshot, record video, and run timed action chains. Use after a build (from any builder) when the user wants to see, test, or interact with their app on a simulator, or says 'show me a screenshot', 'tap', 'run the UI test', 'record a video', or 'launch on simulator'. To build the app first, use limrun-xcode-bazel (Bazel workspaces) or limrun-xcode (xcodebuild projects)."
+description: "Drive an app running on a Limrun cloud iOS simulator: launch, tap, type, read the accessibility element tree, screenshot, record video, connect the app to local services, play a video file as the camera, and run timed action chains. Use after a build (from any builder) when the user wants to see, test, or interact with their app on a simulator, or says 'show me a screenshot', 'tap', 'run the UI test', 'record a video', 'connect localhost', 'reach my local server from the simulator', 'mock the camera', or 'launch on simulator'. To build the app first, use limrun-xcode-bazel (Bazel workspaces) or limrun-xcode (xcodebuild projects)."
 user-invocable: true
 effort: high
 ---
@@ -49,8 +49,9 @@ lim ios create --attach
 
 If the create (or `lim xcode rbe --ios`) output includes a signed stream URL,
 share it with the user as a Markdown link, like
-[Live simulator](<signed-stream-url>). If you have a browser the user can see,
-open the URL there and tell them.
+`[Live simulator](<signed-stream-url>)`. If you have a browser the user can see,
+open the URL there and tell them. Otherwise pass `--no-open` to `create`: it
+skips opening the URL locally and still prints it for sharing.
 
 `lim xcode get` prints a Limrun console URL instead. It opens the same live
 view but requires a console login, so prefer the signed stream URL for sharing.
@@ -65,7 +66,7 @@ lim ios create
 ```
 
 Share the signed stream URL with the user as a Markdown link, like
-[Live simulator](<signed-stream-url>). If you have a browser the user can see,
+`[Live simulator](<signed-stream-url>)`. If you have a browser the user can see,
 open the URL there and tell them.
 
 You can then run the following command to upload a bundle from local:
@@ -76,6 +77,54 @@ lim ios sync <path to .ipa file or .app folder>
 
 You can run the same command every time you need to install a new version of the
 bundle. It will patch with the difference and reload it in the simulator.
+
+## Fold an iPhone Duo
+
+Create a Duo instance in a region that offers it:
+
+```bash
+lim ios create --model iphone-duo
+lim ios fold --json --id <instance-ID>
+lim ios fold 90 --orientation landscape-left --id <instance-ID>
+lim ios fold 90 --id <instance-ID>
+lim ios fold 180 --id <instance-ID>
+lim ios screenshot ./inner.png --display inner --id <instance-ID>
+lim ios tap 300 200 --display inner --id <instance-ID>
+```
+
+The hinge accepts fractional angles from **0° (closed)** to **180° (flat)**.
+Omit the angle to read fold state. `--orientation` accepts `portrait`, `pud`
+(portrait upside down), `landscape-left`, or `landscape-right`; it can change
+independently of the hinge angle.
+This changes the native simulator hinge, so apps receive Apple's hinge and
+layout updates. The browser stream starts in 2D and offers a lazy-loaded 3D
+frame. Both modes provide hinge and rotation controls, with touch input on the
+cover and inner display. The frame's
+Sleep/Wake and volume buttons accept clicks and holds even when position is locked.
+For automation, pair `buttonDown` and `buttonUp` actions with `button` set to
+`side`, `volumeUp`, or `volumeDown` in `client.performActions`.
+
+With an already connected TypeScript device client:
+
+```ts
+const fold = await client.getFoldState(); // null on an ordinary simulator
+await client.setHingeAngle(110);
+await client.setDuoOrientation('landscape-left');
+const inner = await client.screenshotDisplay('inner');
+await client.tapDisplay('inner', inner.width / 2, inner.height / 2);
+```
+
+`setDuoOrientation` accepts `portrait`, `landscape-left`, `landscape-right`,
+and `pud` (upside down). Display screenshots are upright and report dimensions
+in points; `tapDisplay` uses those coordinates. Use `outer` for the cover or
+`inner` for the unfolding display. A display that iOS has turned off returns a
+black image.
+
+Use these display-specific methods for Duo automation. Existing screenshot,
+recording, and accessibility commands do not automatically follow the inner
+display. The 3D viewer supports single-finger touch and drag. Rotating the view
+changes the camera; **Rotate device** changes native orientation. **Laptop view**
+sets the hinge and orientation; it does not enable Apple's separate Table Mode.
 
 ## Targeting the right instance
 
@@ -98,6 +147,46 @@ lim ios element-tree --id <that-id>    # pass --id to EVERY lim ios command
 all `lim ios` calls for the rest of the session (screenshot, tap, type,
 element-tree, record). Alternatively, `git init` the project so the workspace
 resolves on its own. When controlling multiple instances, always pass `--id`.
+
+## Reaching services on the local machine
+
+Destination tunnels let an iPhone simulator app keep calling its normal
+destinations while the CLI dials them from the machine running `lim`. Select
+exact `localhost:port` or literal `IP:port` destinations, or domains that only
+your machine or VPN can reach:
+
+```bash
+lim ios tunnel \
+  --id <ios-instance-id> \
+  --selector localhost:3000 \
+  --selector localhost:8081 \
+  --selector "*.staging.example" \
+  --detach
+```
+
+Use the app's normal URLs, such as `http://localhost:3000`. Declaring
+`localhost:3000` also captures loopback forms such as `127.0.0.1:3000` and
+`[::1]:3000`, plus `[::ffff:127.0.0.1]:3000`. Domain selectors (exact
+`api.corp.example` or label-bound wildcard `"*.staging.example"`) are
+intercepted on the simulator and dialed from your machine whether or not the
+name resolves on public DNS, so your DNS and VPN apply and TLS stays end to
+end. Apps that resolve DNS themselves over HTTPS bypass domain interception.
+A tunnel carries TCP only: up to ten exact selectors and 64 domain selectors,
+ports 1-65535 except 53; CIDRs and UDP are not supported. Start the tunnel
+before launching the app: connections opened earlier keep their original route.
+
+One instance accepts one active destination tunnel, and its selector set is
+immutable. To add or remove a destination, stop the tunnel and start it again
+with the complete selector list:
+
+```bash
+lim ios tunnel status --id <ios-instance-id> --json
+lim ios tunnel stop --id <ios-instance-id>
+```
+
+If the simulator attempts a route while its local service is stopped, the
+tunnel remains active and reports `connection_refused`; restart the service
+without recreating the simulator or tunnel.
 
 ## Launching the app
 
@@ -138,6 +227,15 @@ lim ios tap-element --ax-label "Save"
 lim ios tap 201 450
 ```
 
+`tap-element` taps with a real synthesized touch. Elements the accessibility
+tree can see are scrolled into view automatically. A selector that matches
+nothing in the tree fails in about a second; iOS creates list rows lazily, so
+a below-the-fold row often isn't in the tree at all. For those, pass
+`--scroll-search`: the CLI pages the screen (a few pages down, then up)
+retrying the tap until the row materializes, which can take ~10s. Pass
+`--activate ax` to use an accessibility press instead of a touch (no
+scrolling, works on elements without a usable frame).
+
 **Toolbar / nav-bar items usually can't be tapped by id.** SwiftUI collapses
 toolbar children into a single nav-bar group, and those items report
 `AXUniqueId: null` even when you set `.accessibilityIdentifier(...)` (regular
@@ -151,10 +249,30 @@ lim ios element-tree --id <id> | grep -i -A6 -B2 moon   # find the item's AXFram
 lim ios tap <x> <y> --id <id>                           # tap the frame's center
 ```
 
-For text input:
+For text input, focus a field first (tap it), then type:
 
 ```bash
-lim ios type "hello world"
+lim ios type "hello world"     # real key events; errors if no field is focused
+lim ios type "hi" --no-require-focus  # skip the focus check: for fields focused by coordinate taps when the accessibility focus scan is unreliable
+lim ios press-key backspace
+lim ios press-key @            # shifted symbols work directly
+```
+
+`type` presses real keys, so text delegates fire and the field's own keyboard
+behavior applies (a default text field autocapitalizes the first letter, for
+example). To set a value verbatim with no keyboard behavior, use `set-text`:
+
+```bash
+lim ios set-text "P@ssw0rd!" --focused                 # into the focused field
+lim ios set-text "hello" --ax-unique-id emailField     # by selector
+```
+
+For scrolling and drags:
+
+```bash
+lim ios scroll down --amount 300                       # from the screen center
+lim ios scroll down --amount 300 --coordinate 200,400  # from a specific point
+lim ios swipe --from 200,600 --to 200,200              # explicit drag; --duration 800 for a slower, precise one
 ```
 
 After every interaction, re-run `element-tree` to confirm the UI transitioned.
@@ -193,6 +311,44 @@ lim ios record stop -o /tmp/recording.mp4
 ```
 
 For UI changes, include a demo video in the pull request so the user can see it.
+
+## App container files
+
+List an app's data container before pulling a file so you use the exact path the
+app created. Keep the same `--bundle-id` and `--container-type` flags for list,
+pull, push, and delete:
+
+```bash
+lim ios ls Documents --bundle-id com.example.app --container-type data
+lim ios pull-file Documents/recording.mov ./recording.mov \
+  --bundle-id com.example.app --container-type data
+lim ios push-file ./fixture.json Documents/fixture.json \
+  --bundle-id com.example.app --container-type data
+lim ios delete-file Documents/fixture.json \
+  --bundle-id com.example.app --container-type data
+```
+
+`lim ios ls` defaults to the staging-folder root. With `--bundle-id`, it
+defaults to the app bundle (`--container-type app`); use `data` for the app's
+writable `Documents`, `Library`, and `tmp` directories. Paths in `ls` output are
+relative to the selected root and can be copied directly into the other file
+commands.
+
+## Simulate the camera with a video
+
+For camera-driven flows (QR-code scanning, document capture, video calls),
+play a local video file as the simulator's camera. The app sees the frames
+through its normal capture pipeline:
+
+```bash
+lim ios camera play ./fixtures/qr-scan.mp4            # loops by default
+lim ios camera play ./fixtures/intro.mp4 --no-loop    # play once, freeze on last frame
+lim ios camera clear                                  # restore the default camera
+```
+
+Any AVFoundation-decodable file works (H.264/HEVC in `.mp4`/`.mov`). Use
+`--no-loop` when the app must observe the end of the clip exactly once (the
+feed freezes on the last frame rather than stalling).
 
 ## Preview URL for humans
 
