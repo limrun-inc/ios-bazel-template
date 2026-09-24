@@ -19,6 +19,19 @@ The UI is a single SwiftUI module:
 The `swift_library` globs `Sources/**/*.swift`, so adding or editing Swift files
 needs **no `BUILD.bazel` change**.
 
+## Use as a template
+
+Click **Use this template** to get your own copy. Then add your Limrun API key
+as the `LIM_API_KEY` repository secret, so the iOS Preview workflow posts a
+preview link on every pull request:
+
+```bash
+gh secret set LIM_API_KEY --repo <owner>/<repo>
+```
+
+To start your own app, replace `App/Sources/` with your code and change
+`bundle_id` and `bundle_name` in `App/BUILD.bazel`.
+
 ## Setup
 
 Get an API key from the [Limrun Console](https://console.limrun.com):
